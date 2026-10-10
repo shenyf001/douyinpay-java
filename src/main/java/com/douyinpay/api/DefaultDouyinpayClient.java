@@ -19,6 +19,7 @@ import com.douyinpay.exception.ServiceException;
 import com.douyinpay.util.GsonUtil;
 import com.douyinpay.util.NonceUtil;
 import okhttp3.MediaType;
+import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -229,12 +230,28 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
 
 
     public <T> DouyinpayResponse<T> execute(DouyinpayRequest input, Class<T> reponseClass) throws DouyinpayException {
-
-
         Request okHttpRequest = buildOkHttpRequest(input);
+        return executeRequest(input, okHttpRequest, reponseClass);
+    }
 
+    @Override
+    public <T> DouyinpayResponse<T> executeMultipart(DouyinpayMultipartRequest input, Class<T> responseClass)
+            throws DouyinpayException {
+        DouyinpayRequest signingRequest = new DouyinpayRequest(input.getHttpMethod(), input.getBaseUrl(),
+                input.getPath(), input.getHeaders(), input.getSignBody());
+        MultipartBody body = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("meta", input.getSignBody())
+                .addFormDataPart(input.getFileField(), input.getFileName(),
+                        RequestBody.create(MediaType.parse(input.getFileContentType()), input.getFileContent()))
+                .build();
+        Request okHttpRequest = buildOkHttpRequest(signingRequest, body, false);
+        return executeRequest(signingRequest, okHttpRequest, responseClass);
+    }
+
+    private <T> DouyinpayResponse<T> executeRequest(DouyinpayRequest input, Request okHttpRequest,
+                                                     Class<T> responseClass) {
         try (Response okHttpResponse = defaultOkHttpClient.newCall(okHttpRequest).execute()) {
-
             if (okHttpResponse == null) {
                 throw new RuntimeException("okhttp client response is empty");
             }
@@ -260,8 +277,8 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
             //校验签名&返回信息有效性
             validatePlatformSign(douyinpayResponse.getHeaders(), douyinpayResponse.getBody());
 
-            if (reponseClass != null) {
-                T bizResponse = GsonUtil.getGson().fromJson(douyinpayResponse.getBody(), reponseClass);
+            if (responseClass != null) {
+                T bizResponse = GsonUtil.getGson().fromJson(douyinpayResponse.getBody(), responseClass);
 
                 douyinpayResponse.setApiResponse(bizResponse);
             }
@@ -277,12 +294,15 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
         } catch (Exception e) {
             throw new DouyinpayException(String.format("Send Http Request failed,httpRequest[%s]", okHttpRequest), e);
         }
-
-
     }
 
 
     private Request buildOkHttpRequest(DouyinpayRequest douyinpayRequest) {
+        return buildOkHttpRequest(douyinpayRequest, buildOkHttpRequestBody(douyinpayRequest.getBody()), true);
+    }
+
+    private Request buildOkHttpRequest(DouyinpayRequest douyinpayRequest, RequestBody body,
+                                       boolean addJsonContentType) {
         Request.Builder okHttpRequestBuilder = new Request.Builder().url(douyinpayRequest.getUrl());
         if (this.headers != null) {
             this.headers.forEach(okHttpRequestBuilder::addHeader);
@@ -295,13 +315,14 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
         String auth = douyinpayRequest.getSchema(this.signer.getSignAlgorithmName()) + " " + buildToken(douyinpayRequest);
         okHttpRequestBuilder.addHeader(Constants.AUTHORIZATION, auth);
         okHttpRequestBuilder.addHeader(Constants.ACCEPT, Constants.APPLICATION_JSON);
-        okHttpRequestBuilder.addHeader(Constants.CONTENT_TYPE, Constants.APPLICATION_JSON);
+        if (addJsonContentType) {
+            okHttpRequestBuilder.addHeader(Constants.CONTENT_TYPE, Constants.APPLICATION_JSON);
+        }
         if (StringUtils.isNotEmpty(this.AgentName)) {
             okHttpRequestBuilder.addHeader(Constants.DOUYIN_PAY_SDK_AGENT, this.AgentName);
         }
         String method = douyinpayRequest.getHttpMethod().name();
-        RequestBody okHttpRequestBody = buildOkHttpRequestBody(douyinpayRequest.getBody());
-        okHttpRequestBuilder.method(method, okHttpRequestBody);
+        okHttpRequestBuilder.method(method, body);
         return okHttpRequestBuilder.build();
     }
 
@@ -325,10 +346,10 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
 
     private void validatePlatformSign(Map<String, String> headerMap, String responseBody) {
 
-        String timestamp = headerMap.get(Constants.DOUYIN_PAY_TIMESTAMP);
-        String nonceStr = headerMap.get(Constants.DOUYIN_PAY_NONCE);
-        String signature = headerMap.get(Constants.DOUYIN_PAY_SIGNATURE);
-        String douyinpaySerial = headerMap.get(Constants.DOUYIN_PAY_SERIAL);
+        String timestamp = getHeaderIgnoreCase(headerMap, Constants.DOUYIN_PAY_TIMESTAMP);
+        String nonceStr = getHeaderIgnoreCase(headerMap, Constants.DOUYIN_PAY_NONCE);
+        String signature = getHeaderIgnoreCase(headerMap, Constants.DOUYIN_PAY_SIGNATURE);
+        String douyinpaySerial = getHeaderIgnoreCase(headerMap, Constants.DOUYIN_PAY_SERIAL);
         Instant responseTime = Instant.ofEpochSecond(Long.parseLong(timestamp));
         String requestId = headerMap.get(Constants.DOUYIN_REQUEST_ID);
         responseBody = responseBody == null ? "" : responseBody;
@@ -346,6 +367,15 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
                     requestId, headerMap, responseBody));
         }
 
+    }
+
+    private String getHeaderIgnoreCase(Map<String, String> headers, String name) {
+        for (Map.Entry<String, String> header : headers.entrySet()) {
+            if (name.equalsIgnoreCase(header.getKey())) {
+                return header.getValue();
+            }
+        }
+        return null;
     }
 
 

@@ -13,4 +13,17 @@ public interface DouyinpayClient {
      * @return HTTP返回
      */
     <T> DouyinpayResponse<T> execute(DouyinpayRequest request, Class<T> responseClass);
+
+    /**
+     * Sends a multipart request. Implementations that predate multipart support remain compatible.
+     *
+     * @param request multipart request
+     * @param responseClass business response class
+     * @param <T> business response type
+     * @return HTTP response
+     */
+    default <T> DouyinpayResponse<T> executeMultipart(
+            DouyinpayMultipartRequest request, Class<T> responseClass) {
+        throw new UnsupportedOperationException("multipart requests are not supported by this client");
+    }
 }

@@ -2,8 +2,8 @@ package com.douyinpay.component.http;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
-import static okhttp3.internal.Util.immutableListOf;
 
 /**
  * httpclient（默认okhttp）
@@ -52,7 +52,7 @@ public class DefaultHttpClientBuilder {
 
     public OkHttpClient build() {
         OkHttpClient.Builder okHttpClientBuilder = (customizeOkHttpClient == null ? defaultOkHttpClient : customizeOkHttpClient).newBuilder();
-        okHttpClientBuilder.protocols(immutableListOf(Protocol.HTTP_1_1));
+        okHttpClientBuilder.protocols(Collections.singletonList(Protocol.HTTP_1_1));
 
         if (readTimeoutMs >= 0) {
             okHttpClientBuilder.readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS);
