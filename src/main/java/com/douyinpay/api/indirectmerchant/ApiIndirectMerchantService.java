@@ -149,11 +149,13 @@ public class ApiIndirectMerchantService {
     }
 
     private static String merchantQuery(MerchantLocator request) {
+        String query;
         if (MerchantLocator.hasText(request.getIndirectMerchantId())) {
-            return "?indirect_merchant_id=" + StringUtil.urlEncode(request.getIndirectMerchantId());
+            query = "?indirect_merchant_id=" + StringUtil.urlEncode(request.getIndirectMerchantId());
+        } else {
+            query = "?out_indirect_merchant_id=" + StringUtil.urlEncode(request.getOutIndirectMerchantId())
+                    + "&out_payment_inst_id=" + StringUtil.urlEncode(request.getOutPaymentInstId());
         }
-        String query = "?out_indirect_merchant_id=" + StringUtil.urlEncode(request.getOutIndirectMerchantId())
-                + "&out_payment_inst_id=" + StringUtil.urlEncode(request.getOutPaymentInstId());
         if (MerchantLocator.hasText(request.getOutChannelSpId())) {
             query += "&out_channel_sp_id=" + StringUtil.urlEncode(request.getOutChannelSpId());
         }

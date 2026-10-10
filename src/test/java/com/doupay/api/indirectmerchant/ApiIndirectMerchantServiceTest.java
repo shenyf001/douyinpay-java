@@ -56,6 +56,11 @@ public class ApiIndirectMerchantServiceTest {
         ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder().douyinpayClient(client).build();
         CreateApplyRequest create = new CreateApplyRequest();
         create.setBusinessCode("apply_1");
+        create.setOutIndirectMerchantId("out_merchant_1");
+        create.setOutPaymentInstId("payment_inst_1");
+        create.setOutChannelSpId("channel_sp_1");
+        create.setOutPaymentInstSubId("payment_inst_sub_1");
+        create.setIndirectMerchantId("merchant_1");
         service.createApply(create);
         QueryApplyRequest queryApply = new QueryApplyRequest();
         queryApply.setBusinessCode("apply_1");
@@ -64,6 +69,7 @@ public class ApiIndirectMerchantServiceTest {
         cancel.setApplymentId("applyment_1");
         service.cancelApply(cancel);
         QueryMerchantRequest merchant = platformLocator(new QueryMerchantRequest());
+        merchant.setOutChannelSpId("channel_1");
         service.queryMerchant(merchant);
         ModifyMerchantRequest modify = platformLocator(new ModifyMerchantRequest());
         modify.setMerchantShortName("shop");
@@ -80,11 +86,19 @@ public class ApiIndirectMerchantServiceTest {
         Assert.assertEquals("/v1/merchant/indirect_merchant/create_apply", requests.getAllValues().get(0).getPath());
         Assert.assertEquals(HttpMethod.POST, requests.getAllValues().get(0).getHttpMethod());
         Assert.assertEquals("1234", requests.getAllValues().get(0).getHeaders().get(Constants.DOUYIN_PAY_SERIAL));
+        JsonObject createBody = new com.google.gson.Gson().fromJson(requests.getAllValues().get(0).getBody(),
+                JsonObject.class);
+        Assert.assertEquals("apply_1", createBody.get("business_code").getAsString());
+        Assert.assertEquals("out_merchant_1", createBody.get("out_indirect_merchant_id").getAsString());
+        Assert.assertEquals("payment_inst_1", createBody.get("out_payment_inst_id").getAsString());
+        Assert.assertEquals("channel_sp_1", createBody.get("out_channel_sp_id").getAsString());
+        Assert.assertEquals("payment_inst_sub_1", createBody.get("out_payment_inst_sub_id").getAsString());
+        Assert.assertEquals("merchant_1", createBody.get("indirect_merchant_id").getAsString());
         Assert.assertEquals("?business_code=apply_1",
                 requests.getAllValues().get(1).getPath().substring(
                         "/v1/merchant/indirect_merchant/query_apply".length()));
         Assert.assertEquals(HttpMethod.POST, requests.getAllValues().get(2).getHttpMethod());
-        Assert.assertEquals("?indirect_merchant_id=im_1",
+        Assert.assertEquals("?indirect_merchant_id=im_1&out_channel_sp_id=channel_1",
                 requests.getAllValues().get(3).getPath().substring(
                         "/v1/merchant/indirect_merchant/query_merchant".length()));
         Assert.assertEquals(HttpMethod.POST, requests.getAllValues().get(4).getHttpMethod());
@@ -126,6 +140,30 @@ public class ApiIndirectMerchantServiceTest {
         ApplymentStatusNotification actual = new ApiIndirectMerchantService.Builder().build()
                 .parseApplymentStatusNotification(parser, requestParam);
         Assert.assertEquals("NEW_STATE", actual.getApplymentState());
+    }
+
+    @Test
+    public void createApplyShouldRequireExternalMerchantFields() {
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder().build();
+
+        CreateApplyRequest missingOutMerchant = new CreateApplyRequest();
+        missingOutMerchant.setBusinessCode("apply_1");
+        missingOutMerchant.setOutPaymentInstId("payment_inst_1");
+        assertInvalidCreateApply(service, missingOutMerchant);
+
+        CreateApplyRequest missingPaymentInstitution = new CreateApplyRequest();
+        missingPaymentInstitution.setBusinessCode("apply_1");
+        missingPaymentInstitution.setOutIndirectMerchantId("out_merchant_1");
+        assertInvalidCreateApply(service, missingPaymentInstitution);
+    }
+
+    private static void assertInvalidCreateApply(ApiIndirectMerchantService service, CreateApplyRequest request) {
+        try {
+            service.createApply(request);
+            Assert.fail("expected validation failure");
+        } catch (IllegalArgumentException expected) {
+            // Expected.
+        }
     }
 
     private static void assertInvalidUpload(ApiIndirectMerchantService service, UploadRequest request) {

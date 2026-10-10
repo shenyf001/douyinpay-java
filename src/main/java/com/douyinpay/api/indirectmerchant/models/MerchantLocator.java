@@ -23,9 +23,6 @@ public class MerchantLocator {
             throw new IllegalArgumentException(
                     "out_indirect_merchant_id and out_payment_inst_id must be specified together");
         }
-        if (platform && hasText(outChannelSpId)) {
-            throw new IllegalArgumentException("out_channel_sp_id requires the external merchant locator");
-        }
     }
 
     public static boolean hasText(String value) {
