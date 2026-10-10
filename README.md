@@ -33,3 +33,26 @@ NotificationParser parser=new NotificationParser(rsaNotificationConfig);
 // 验签并解密报文
 DecryptObject decryptObject = parser.parse(requestParam,DecryptObject.class);
 ```
+
+## 间连商户
+
+`ApiIndirectMerchantService` 提供间连商户申请、查询、撤销、商户维护、AppID 绑定和图片上传能力。未完整公开定义的嵌套对象使用 Gson `JsonObject` 或 `JsonArray` 透传。
+
+```java
+ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder()
+        .douyinpayClient(douyinpayClient)
+        .domainName(DomainName.API)
+        .build();
+
+QueryApplyRequest query = new QueryApplyRequest();
+query.setBusinessCode("merchant_apply_1");
+QueryApplyResponse applyment = service.queryApply(query);
+
+UploadResponse media = service.upload(new UploadRequest(
+        "license.jpg", "image/jpeg", imageBytes));
+
+ApplymentStatusNotification notification =
+        service.parseApplymentStatusNotification(parser, requestParam);
+```
+
+图片上传仅支持 JPG、BMP 和 PNG，文件不得为空且最大为 5 MB。申请单状态通知会先验签再解密；调用方应使用通知标识或申请单标识自行去重，并且不得记录解密后的敏感内容。

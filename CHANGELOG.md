@@ -4,6 +4,12 @@
 
 ClientVersion 每次sdk升级，需要更新版本号
 
+## Unreleased
+
+- 新增间连商户八个主动接口：申请创建、查询和撤销，商户查询和修改，AppID 绑定和查询，以及图片上传
+- 新增 multipart 图片上传，请求签名正文为 `meta` JSON
+- 新增间连商户申请单状态通知解析模型和便捷入口
+
 ## v1.0.12 - 2026-09-06
 
 - 补充平台证书、账单、先享后付等模块的接口与字段注释说明
@@ -42,4 +48,3 @@ ClientVersion 每次sdk升级，需要更新版本号
 ## v 0.0.2 - 2025-05-28
 
 - 商户代扣接口（com.douyinpay.api.deduct.ApiDeductService.deduct），响应体增加ResultCode字段
-
