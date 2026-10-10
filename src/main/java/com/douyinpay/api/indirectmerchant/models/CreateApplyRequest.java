@@ -5,6 +5,7 @@ import com.google.gson.annotations.SerializedName;
 
 public class CreateApplyRequest {
     @SerializedName("business_code") private String businessCode;
+    private transient String douyinpaySerial;
     @SerializedName("out_indirect_merchant_id") private String outIndirectMerchantId;
     @SerializedName("out_payment_inst_id") private String outPaymentInstId;
     @SerializedName("out_channel_sp_id") private String outChannelSpId;
@@ -24,6 +25,8 @@ public class CreateApplyRequest {
     }
     public String getBusinessCode() { return businessCode; }
     public void setBusinessCode(String value) { businessCode = value; }
+    public String getDouyinpaySerial() { return douyinpaySerial; }
+    public void setDouyinpaySerial(String value) { douyinpaySerial = value; }
     public String getOutIndirectMerchantId() { return outIndirectMerchantId; }
     public void setOutIndirectMerchantId(String value) { outIndirectMerchantId = value; }
     public String getOutPaymentInstId() { return outPaymentInstId; }

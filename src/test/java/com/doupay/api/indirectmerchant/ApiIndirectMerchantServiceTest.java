@@ -1,6 +1,7 @@
 package com.doupay.api.indirectmerchant;
 
 import com.douyinpay.api.DefaultDouyinpayClient;
+import com.douyinpay.api.DouyinpayClient;
 import com.douyinpay.api.DouyinpayMultipartRequest;
 import com.douyinpay.api.DouyinpayRequest;
 import com.douyinpay.api.DouyinpayResponse;
@@ -24,6 +25,7 @@ import com.douyinpay.api.notification.NotificationParser;
 import com.douyinpay.api.notification.RequestParam;
 import com.douyinpay.component.http.HttpMethod;
 import com.douyinpay.define.Constants;
+import com.douyinpay.exception.DouyinpayException;
 import com.google.gson.JsonObject;
 import org.junit.Assert;
 import org.junit.Test;
@@ -68,7 +70,9 @@ public class ApiIndirectMerchantServiceTest {
         CancelApplyRequest cancel = new CancelApplyRequest();
         cancel.setApplymentId("applyment_1");
         service.cancelApply(cancel);
-        QueryMerchantRequest merchant = platformLocator(new QueryMerchantRequest());
+        QueryMerchantRequest merchant = new QueryMerchantRequest();
+        merchant.setOutIndirectMerchantId("out_merchant_1");
+        merchant.setOutPaymentInstId("payment_inst_1");
         merchant.setOutChannelSpId("channel_1");
         service.queryMerchant(merchant);
         ModifyMerchantRequest modify = platformLocator(new ModifyMerchantRequest());
@@ -98,7 +102,8 @@ public class ApiIndirectMerchantServiceTest {
                 requests.getAllValues().get(1).getPath().substring(
                         "/v1/merchant/indirect_merchant/query_apply".length()));
         Assert.assertEquals(HttpMethod.POST, requests.getAllValues().get(2).getHttpMethod());
-        Assert.assertEquals("?indirect_merchant_id=im_1&out_channel_sp_id=channel_1",
+        Assert.assertEquals("?out_indirect_merchant_id=out_merchant_1&out_payment_inst_id=payment_inst_1"
+                        + "&out_channel_sp_id=channel_1",
                 requests.getAllValues().get(3).getPath().substring(
                         "/v1/merchant/indirect_merchant/query_merchant".length()));
         Assert.assertEquals(HttpMethod.POST, requests.getAllValues().get(4).getHttpMethod());
@@ -155,6 +160,48 @@ public class ApiIndirectMerchantServiceTest {
         missingPaymentInstitution.setBusinessCode("apply_1");
         missingPaymentInstitution.setOutIndirectMerchantId("out_merchant_1");
         assertInvalidCreateApply(service, missingPaymentInstitution);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void queryMerchantShouldRejectChannelWithPlatformLocator() {
+        QueryMerchantRequest request = platformLocator(new QueryMerchantRequest());
+        request.setOutChannelSpId("channel_1");
+
+        new ApiIndirectMerchantService.Builder().build().queryMerchant(request);
+    }
+
+    @Test
+    public void createApplyShouldAcceptSerialWithCustomClient() {
+        final DouyinpayRequest[] captured = new DouyinpayRequest[1];
+        DouyinpayClient client = new DouyinpayClient() {
+            @Override
+            public <T> DouyinpayResponse<T> execute(DouyinpayRequest request, Class<T> responseClass) {
+                captured[0] = request;
+                return response(responseClass.cast(new CreateApplyResponse()));
+            }
+        };
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder().douyinpayClient(client).build();
+        CreateApplyRequest request = new CreateApplyRequest();
+        request.setBusinessCode("apply_1");
+        request.setDouyinpaySerial("custom-serial");
+        request.setOutIndirectMerchantId("out_merchant_1");
+        request.setOutPaymentInstId("payment_inst_1");
+
+        service.createApply(request);
+
+        Assert.assertEquals("custom-serial", captured[0].getHeaders().get(Constants.DOUYIN_PAY_SERIAL));
+        Assert.assertFalse(new com.google.gson.Gson().fromJson(captured[0].getBody(), JsonObject.class)
+                .has("douyinpaySerial"));
+    }
+
+    @Test(expected = DouyinpayException.class)
+    public void createApplyShouldRequireSerialWhenCertificateIsUnavailable() {
+        CreateApplyRequest request = new CreateApplyRequest();
+        request.setBusinessCode("apply_1");
+        request.setOutIndirectMerchantId("out_merchant_1");
+        request.setOutPaymentInstId("payment_inst_1");
+
+        new ApiIndirectMerchantService.Builder().build().createApply(request);
     }
 
     private static void assertInvalidCreateApply(ApiIndirectMerchantService service, CreateApplyRequest request) {

@@ -76,7 +76,7 @@ public class ApiIndirectMerchantService {
 
     public CreateApplyResponse createApply(CreateApplyRequest request) {
         request.validate();
-        return execute(HttpMethod.POST, CREATE_APPLY_PATH, serialHeader(), GsonUtil.objectToJson(request),
+        return execute(HttpMethod.POST, CREATE_APPLY_PATH, serialHeader(request), GsonUtil.objectToJson(request),
                 CreateApplyResponse.class);
     }
 
@@ -162,16 +162,19 @@ public class ApiIndirectMerchantService {
         return query;
     }
 
-    private Map<String, String> serialHeader() {
-        if (!(douyinpayClient instanceof DefaultDouyinpayClient)) {
-            throw new DouyinpayException("Douyinpay-Serial requires DefaultDouyinpayClient platform certificate");
+    private Map<String, String> serialHeader(CreateApplyRequest request) {
+        String serial = request.getDouyinpaySerial();
+        if (!MerchantLocator.hasText(serial) && douyinpayClient instanceof DefaultDouyinpayClient) {
+            X509Certificate certificate = ((DefaultDouyinpayClient) douyinpayClient).getPlatformCertificate();
+            if (certificate != null) {
+                serial = PemUtil.getSerialNumber(certificate);
+            }
         }
-        X509Certificate certificate = ((DefaultDouyinpayClient) douyinpayClient).getPlatformCertificate();
-        if (certificate == null) {
-            throw new DouyinpayException("platform certificate is required for Douyinpay-Serial");
+        if (!MerchantLocator.hasText(serial)) {
+            throw new DouyinpayException("Douyinpay-Serial is required for create apply");
         }
         Map<String, String> headers = new HashMap<String, String>();
-        headers.put(Constants.DOUYIN_PAY_SERIAL, PemUtil.getSerialNumber(certificate));
+        headers.put(Constants.DOUYIN_PAY_SERIAL, serial);
         return headers;
     }
 
