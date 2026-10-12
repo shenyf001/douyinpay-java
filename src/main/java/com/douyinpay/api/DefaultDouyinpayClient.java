@@ -241,7 +241,8 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
                 input.getPath(), input.getHeaders(), input.getSignBody());
         MultipartBody body = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
-                .addFormDataPart("meta", input.getSignBody())
+                .addFormDataPart("meta", null,
+                        RequestBody.create(MediaType.parse(Constants.APPLICATION_JSON), input.getSignBody()))
                 .addFormDataPart(input.getFileField(), input.getFileName(),
                         RequestBody.create(MediaType.parse(input.getFileContentType()), input.getFileContent()))
                 .build();

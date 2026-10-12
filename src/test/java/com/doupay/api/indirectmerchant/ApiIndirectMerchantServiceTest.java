@@ -26,14 +26,24 @@ import com.douyinpay.api.notification.RequestParam;
 import com.douyinpay.component.http.HttpMethod;
 import com.douyinpay.define.Constants;
 import com.douyinpay.exception.DouyinpayException;
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
+import java.util.List;
+
+import javax.crypto.Cipher;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -42,6 +52,35 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class ApiIndirectMerchantServiceTest {
+    @Test
+    public void queryApplyShouldParseAuditArrayAndUseEitherLocator() {
+        final DouyinpayRequest[] captured = new DouyinpayRequest[1];
+        final String json = "{\"business_code\":\"602323_10000\",\"applyment_id\":\"NIM2000002124775691\","
+                + "\"applyment_state\":\"APPLYMENT_STATE_REJECTED\",\"audit_detail\":["
+                + "{\"field\":\"id_card_copy\",\"reject_reason\":\"请上传清晰图片\",\"future_field\":true}]}";
+        DouyinpayClient client = new DouyinpayClient() {
+            public <T> DouyinpayResponse<T> execute(DouyinpayRequest request, Class<T> type) {
+                captured[0] = request;
+                return response(new com.google.gson.Gson().fromJson(json, type));
+            }
+        };
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder().douyinpayClient(client).build();
+        for (boolean useId : new boolean[] {true, false}) {
+            QueryApplyRequest request = new QueryApplyRequest();
+            if (useId) request.setApplymentId("NIM2000002124775691");
+            else request.setBusinessCode("602323_10000");
+            QueryApplyResponse result = service.queryApply(request);
+            Assert.assertEquals(HttpMethod.GET, captured[0].getHttpMethod());
+            Assert.assertEquals("/v1/merchant/indirect_merchant/query_apply?"
+                    + (useId ? "applyment_id=NIM2000002124775691" : "business_code=602323_10000"),
+                    captured[0].getPath());
+            Assert.assertEquals("APPLYMENT_STATE_REJECTED", result.getApplymentState());
+            Assert.assertEquals(1, result.getAuditDetail().size());
+            Assert.assertEquals("id_card_copy", result.getAuditDetail().get(0).getField());
+            Assert.assertEquals("请上传清晰图片", result.getAuditDetail().get(0).getRejectReason());
+        }
+    }
+
     @Test
     public void serviceShouldBuildAllRequestContractsAndMapResponses() {
         DefaultDouyinpayClient client = mock(DefaultDouyinpayClient.class);
@@ -202,6 +241,218 @@ public class ApiIndirectMerchantServiceTest {
         request.setOutPaymentInstId("payment_inst_1");
 
         new ApiIndirectMerchantService.Builder().build().createApply(request);
+    }
+
+    @Test
+    public void testCreateApply_completeContractWithBuilderCertificate() throws Exception {
+        KeyPair keys = createApplyKeys();
+        X509Certificate certificate = createApplyCertificate(keys);
+        for (boolean explicitSerial : new boolean[] {false, true}) {
+            CreateApplyRecordingClient client = new CreateApplyRecordingClient();
+            ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder()
+                    .douyinpayClient(client).platformCertificate(certificate).build();
+            CreateApplyRequest request = createApplyContractRequest();
+            if (explicitSerial) {
+                request.setDouyinpaySerial("ABC123");
+            }
+            String original = new Gson().toJson(request);
+            for (int attempt = 0; attempt < 2; attempt++) {
+                CreateApplyResponse actual = service.createApply(request);
+                Assert.assertEquals("NIM2000002124775691", actual.getApplymentId());
+                Assert.assertEquals(attempt + 1, client.requests.size());
+                assertCreateApplyContract(client.requests.get(attempt), keys.getPrivate());
+                Assert.assertEquals(original, new Gson().toJson(request));
+                Assert.assertEquals(explicitSerial ? "ABC123" : null, request.getDouyinpaySerial());
+                Assert.assertEquals("Alice Zhang", request.getIdentificationInfo().getIdentificationName());
+                Assert.assertEquals("110101199001011234",
+                        request.getIdentificationInfo().getIdentificationNumber());
+            }
+        }
+    }
+
+    @Test
+    public void testCreateApply_completeContractWithDefaultClientCertificate() throws Exception {
+        KeyPair keys = createApplyKeys();
+        DefaultDouyinpayClient client = mock(DefaultDouyinpayClient.class);
+        X509Certificate certificate = createApplyCertificate(keys);
+        when(client.getPlatformCertificate()).thenReturn(certificate);
+        stubResponse(client, CreateApplyResponse.class, new Gson().fromJson(
+                "{\"applyment_id\":\"NIM2000002124775691\"}", CreateApplyResponse.class));
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder().douyinpayClient(client).build();
+        CreateApplyRequest request = createApplyContractRequest();
+        String original = new Gson().toJson(request);
+
+        Assert.assertEquals("NIM2000002124775691", service.createApply(request).getApplymentId());
+        Assert.assertEquals("NIM2000002124775691", service.createApply(request).getApplymentId());
+
+        ArgumentCaptor<DouyinpayRequest> captured = ArgumentCaptor.forClass(DouyinpayRequest.class);
+        verify(client, org.mockito.Mockito.times(2)).execute(captured.capture(), eq(CreateApplyResponse.class));
+        for (DouyinpayRequest sent : captured.getAllValues()) {
+            assertCreateApplyContract(sent, keys.getPrivate());
+        }
+        Assert.assertEquals(original, new Gson().toJson(request));
+        Assert.assertNull(request.getDouyinpaySerial());
+    }
+
+    @Test
+    public void testCreateApply_encryptSingleSensitiveField() throws Exception {
+        KeyPair keys = createApplyKeys();
+        for (boolean nameOnly : new boolean[] {true, false}) {
+            CreateApplyRecordingClient client = new CreateApplyRecordingClient();
+            ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder()
+                    .douyinpayClient(client).platformCertificate(createApplyCertificate(keys)).build();
+            CreateApplyRequest request = createApplyContractRequest();
+            String field = nameOnly ? "identification_name" : "identification_number";
+            String absentField = nameOnly ? "identification_number" : "identification_name";
+            String plaintext = nameOnly ? "Alice Zhang" : "110101199001011234";
+            if (nameOnly) {
+                request.getIdentificationInfo().setIdentificationNumber(null);
+            } else {
+                request.getIdentificationInfo().setIdentificationName(null);
+            }
+            String original = new Gson().toJson(request);
+
+            service.createApply(request);
+
+            Assert.assertEquals(1, client.requests.size());
+            DouyinpayRequest sent = client.requests.get(0);
+            JsonObject identification = new Gson().fromJson(sent.getBody(), JsonObject.class)
+                    .getAsJsonObject("identification_info");
+            Assert.assertEquals(plaintext, decryptCreateApplyField(
+                    identification.get(field).getAsString(), keys.getPrivate()));
+            Assert.assertFalse(identification.has(absentField));
+            Assert.assertEquals("ABC123", sent.getHeaders().get(Constants.DOUYIN_PAY_SERIAL));
+            Assert.assertEquals(original, new Gson().toJson(request));
+        }
+    }
+
+    @Test
+    public void testCreateApply_missingCertificateDoesNotSend() {
+        for (String serial : new String[] {null, "ABC123"}) {
+            CreateApplyRecordingClient client = new CreateApplyRecordingClient();
+            ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder()
+                    .douyinpayClient(client).build();
+            CreateApplyRequest request = createApplyContractRequest();
+            request.setDouyinpaySerial(serial);
+            assertCreateApplyRejectedBeforeSend(service, client, request,
+                    serial == null ? "Douyinpay-Serial" : "platform certificate");
+        }
+    }
+
+    @Test
+    public void testCreateApply_serialMismatchDoesNotSend() throws Exception {
+        KeyPair keys = createApplyKeys();
+        CreateApplyRecordingClient client = new CreateApplyRecordingClient();
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder()
+                .douyinpayClient(client).platformCertificate(createApplyCertificate(keys)).build();
+        CreateApplyRequest request = createApplyContractRequest();
+        request.setDouyinpaySerial("OTHER_SERIAL");
+
+        assertCreateApplyRejectedBeforeSend(service, client, request, "match");
+    }
+
+    @Test
+    public void testCreateApply_missingSerialDoesNotSend() {
+        CreateApplyRecordingClient client = new CreateApplyRecordingClient();
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder().douyinpayClient(client).build();
+        CreateApplyRequest request = createApplyContractRequest();
+        request.setIdentificationInfo(null);
+
+        assertCreateApplyRejectedBeforeSend(service, client, request, "Douyinpay-Serial");
+    }
+
+    @Test
+    public void testCreateApply_oversizedPlaintextDoesNotSend() throws Exception {
+        KeyPair keys = createApplyKeys();
+        CreateApplyRecordingClient client = new CreateApplyRecordingClient();
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder()
+                .douyinpayClient(client).platformCertificate(createApplyCertificate(keys)).build();
+        CreateApplyRequest request = createApplyContractRequest();
+        request.getIdentificationInfo().setIdentificationName(String.join("",
+                Collections.nCopies(246, "a")));
+
+        assertCreateApplyRejectedBeforeSend(service, client, request, "RSA");
+    }
+
+    private static final String CREATE_APPLY_CONTRACT_JSON = "{"
+            + "\"business_code\":\"602323_10000\",\"out_indirect_merchant_id\":\"10434920032\","
+            + "\"out_payment_inst_id\":\"41110000\",\"out_channel_sp_id\":\"C023828488\","
+            + "\"out_payment_inst_sub_id\":\"41110100\",\"indirect_merchant_id\":\"2026045587123820\","
+            + "\"subject_info\":{\"subject_type\":\"SUBJECT_TYPE_ENTERPRISE\",\"certificate_info\":{"
+            + "\"cert_no\":\"91310000TEST123456\",\"merchant_name\":\"Contract Shop\","
+            + "\"cert_copy\":\"license_media\",\"register_address\":\"123 Contract Road\","
+            + "\"legal_person_name\":\"Alice Zhang\",\"period_begin\":\"2019-08-01\",\"period_end\":\"2039-08-01\"}},"
+            + "\"identification_info\":{\"identification_type\":\"IDENTIFICATION_TYPE_IDCARD\","
+            + "\"identification_name\":\"Alice Zhang\",\"identification_number\":\"110101199001011234\","
+            + "\"period_begin\":\"2019-08-01\",\"period_end\":\"2039-08-01\","
+            + "\"identification_front_copy\":\"front_media\",\"identification_back_copy\":\"back_media\"},"
+            + "\"business_info\":{\"merchant_short_name\":\"Contract Shop\",\"service_phone\":\"18042002458\","
+            + "\"mcc\":\"7300\",\"special_industry_pics\":[\"industry_1\",\"industry_2\"]},"
+            + "\"addition_info\":{\"addition_pics\":[\"addition_1\",\"addition_2\"],"
+            + "\"addition_remark\":\"Contract materials\"}}";
+
+    private static CreateApplyRequest createApplyContractRequest() {
+        return new Gson().fromJson(CREATE_APPLY_CONTRACT_JSON, CreateApplyRequest.class);
+    }
+
+    private static KeyPair createApplyKeys() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
+    }
+
+    private static X509Certificate createApplyCertificate(KeyPair keys) {
+        X509Certificate certificate = mock(X509Certificate.class);
+        when(certificate.getSerialNumber()).thenReturn(new BigInteger("ABC123", 16));
+        when(certificate.getPublicKey()).thenReturn(keys.getPublic());
+        return certificate;
+    }
+
+    private static String decryptCreateApplyField(String ciphertext, PrivateKey key) throws Exception {
+        byte[] encrypted = Base64.getDecoder().decode(ciphertext);
+        Assert.assertEquals(256, encrypted.length);
+        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        cipher.init(Cipher.DECRYPT_MODE, key);
+        return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+    }
+
+    private static void assertCreateApplyContract(DouyinpayRequest sent, PrivateKey key) throws Exception {
+        Assert.assertEquals(HttpMethod.POST, sent.getHttpMethod());
+        Assert.assertEquals("/v1/merchant/indirect_merchant/create_apply", sent.getPath());
+        Assert.assertEquals("ABC123", sent.getHeaders().get(Constants.DOUYIN_PAY_SERIAL));
+        Gson gson = new Gson();
+        JsonObject body = gson.fromJson(sent.getBody(), JsonObject.class);
+        JsonObject identification = body.getAsJsonObject("identification_info");
+        for (String field : new String[] {"identification_name", "identification_number"}) {
+            identification.addProperty(field, decryptCreateApplyField(identification.get(field).getAsString(), key));
+        }
+        Assert.assertEquals(gson.fromJson(CREATE_APPLY_CONTRACT_JSON, JsonObject.class), body);
+    }
+
+    private static void assertCreateApplyRejectedBeforeSend(ApiIndirectMerchantService service,
+            CreateApplyRecordingClient client, CreateApplyRequest request, String message) {
+        String original = new Gson().toJson(request);
+        String serial = request.getDouyinpaySerial();
+        try {
+            service.createApply(request);
+            Assert.fail("expected create apply rejection");
+        } catch (DouyinpayException expected) {
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(message));
+        }
+        Assert.assertEquals(0, client.requests.size());
+        Assert.assertEquals(original, new Gson().toJson(request));
+        Assert.assertEquals(serial, request.getDouyinpaySerial());
+    }
+
+    private static class CreateApplyRecordingClient implements DouyinpayClient {
+        private final List<DouyinpayRequest> requests = new ArrayList<DouyinpayRequest>();
+
+        @Override
+        public <T> DouyinpayResponse<T> execute(DouyinpayRequest request, Class<T> responseClass) {
+            Assert.assertEquals(CreateApplyResponse.class, responseClass);
+            requests.add(request);
+            return response(new Gson().fromJson("{\"applyment_id\":\"NIM2000002124775691\"}", responseClass));
+        }
     }
 
     private static void assertInvalidCreateApply(ApiIndirectMerchantService service, CreateApplyRequest request) {

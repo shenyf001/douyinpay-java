@@ -36,12 +36,14 @@ DecryptObject decryptObject = parser.parse(requestParam,DecryptObject.class);
 
 ## 间连商户
 
-`ApiIndirectMerchantService` 提供间连商户申请、查询、撤销、商户维护、AppID 绑定和图片上传能力。未完整公开定义的嵌套对象使用 Gson `JsonObject` 或 `JsonArray` 透传。
+`ApiIndirectMerchantService` 提供间连商户申请、查询、撤销、商户维护、AppID 绑定和图片上传能力，使用完整的强类型请求与响应模型。申请中的证件持有人姓名、证件号码传入明文，由 SDK 使用平台证书 RSA PKCS#1 v1.5 加密；查询商户时先验签，再使用商户私钥解密这两个字段。
 
 ```java
 ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder()
         .douyinpayClient(douyinpayClient)
         .domainName(DomainName.API)
+        .platformCertificate(platformCertificate)
+        .merchantPrivateKey(merchantPrivateKey)
         .build();
 
 QueryApplyRequest query = new QueryApplyRequest();
@@ -56,3 +58,5 @@ ApplymentStatusNotification notification =
 ```
 
 图片上传仅支持 JPG、BMP 和 PNG，文件不得为空且最大为 5 MB。申请单状态通知会先验签再解密；调用方应使用通知标识或申请单标识自行去重，并且不得记录解密后的敏感内容。
+
+使用 `DefaultDouyinpayClient` 时默认沿用客户端的平台证书和商户私钥；自定义客户端可通过 Builder 显式配置。显式设置的 `DouyinpaySerial` 必须与加密证书序列号一致。SDK 在请求副本中加密，不修改调用方资料。自定义客户端应完成响应验签后返回业务对象。图片大小按官方参数表的 5 MB 校验，官方错误码表仍有 2 MB 旧描述，实际服务端限制需以返回结果为准。
