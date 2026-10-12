@@ -239,12 +239,16 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
             throws DouyinpayException {
         DouyinpayRequest signingRequest = new DouyinpayRequest(input.getHttpMethod(), input.getBaseUrl(),
                 input.getPath(), input.getHeaders(), input.getSignBody());
+        String fileContentType = input.getFileContentType();
+        if (fileContentType == null || fileContentType.isEmpty()) {
+            fileContentType = "application/octet-stream";
+        }
         MultipartBody body = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("meta", null,
                         RequestBody.create(MediaType.parse(Constants.APPLICATION_JSON), input.getSignBody()))
                 .addFormDataPart(input.getFileField(), input.getFileName(),
-                        RequestBody.create(MediaType.parse(input.getFileContentType()), input.getFileContent()))
+                        RequestBody.create(MediaType.parse(fileContentType), input.getFileContent()))
                 .build();
         Request okHttpRequest = buildOkHttpRequest(signingRequest, body, false);
         return executeRequest(signingRequest, okHttpRequest, responseClass);
@@ -318,6 +322,8 @@ public class DefaultDouyinpayClient implements DouyinpayClient {
         okHttpRequestBuilder.addHeader(Constants.ACCEPT, Constants.APPLICATION_JSON);
         if (addJsonContentType) {
             okHttpRequestBuilder.addHeader(Constants.CONTENT_TYPE, Constants.APPLICATION_JSON);
+        } else {
+            okHttpRequestBuilder.header(Constants.CONTENT_TYPE, body.contentType().toString());
         }
         if (StringUtils.isNotEmpty(this.AgentName)) {
             okHttpRequestBuilder.addHeader(Constants.DOUYIN_PAY_SDK_AGENT, this.AgentName);

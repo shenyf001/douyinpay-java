@@ -11,6 +11,8 @@ ClientVersion 每次sdk升级，需要更新版本号
 - 新增间连商户申请单状态通知解析模型和便捷入口
 - 对齐完整强类型模型，审核详情为数组，补齐渠道商号和应用信息
 - 申请证件姓名/号码加密、查询商户验签后解密；修正 multipart 分段 MIME 并补齐密码学异常回归
+- 上传未指定文件 MIME 时使用 application/octet-stream，multipart 请求头显式保留正文 boundary
+- 图片文件名按 Unicode 字符校验 128 字符上限
 
 ## v1.0.12 - 2026-09-06
 

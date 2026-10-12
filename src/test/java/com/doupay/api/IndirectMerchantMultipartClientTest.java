@@ -56,7 +56,18 @@ public class IndirectMerchantMultipartClientTest {
         executeMultipart(true, Collections.<String, String>emptyMap());
     }
 
+    @Test
+    public void executeMultipartShouldDefaultMissingFileContentType() throws Exception {
+        executeMultipart(false, Collections.<String, String>emptyMap(), null);
+        executeMultipart(false, Collections.<String, String>emptyMap(), "");
+    }
+
     private void executeMultipart(final boolean tamper, Map<String, String> headers) throws Exception {
+        executeMultipart(tamper, headers, "image/jpeg");
+    }
+
+    private void executeMultipart(final boolean tamper, Map<String, String> headers,
+                                  String fileContentType) throws Exception {
         final String meta = "{\"filename\":\"license.jpg\",\"sha256\":\"abc\"}";
         final KeyPair merchant = testKeyPair();
         final KeyPair platform = testKeyPair();
@@ -110,7 +121,7 @@ public class IndirectMerchantMultipartClientTest {
             DefaultDouyinpayClient client = new DefaultDouyinpayClient(config);
             DouyinpayMultipartRequest request = new DouyinpayMultipartRequest(HttpMethod.POST,
                     "http://localhost:" + server.getAddress().getPort(), "/v1/merchant/upload?kind=license",
-                    headers, meta, "file", "license.jpg", "image/jpeg", fileContent);
+                    headers, meta, "file", "license.jpg", fileContentType, fileContent);
 
             if (tamper) {
                 try {
@@ -163,7 +174,8 @@ public class IndirectMerchantMultipartClientTest {
                         Assert.assertFalse(disposition.contains("filename="));
                     } else {
                         Assert.assertEquals("form-data; name=\"file\"; filename=\"license.jpg\"", disposition);
-                        Assert.assertEquals("image/jpeg", part.headers().get("Content-Type"));
+                        Assert.assertEquals(fileContentType == null || fileContentType.isEmpty()
+                                ? "application/octet-stream" : fileContentType, part.headers().get("Content-Type"));
                         Assert.assertArrayEquals(fileContent, part.body().readByteArray());
                     }
                 }

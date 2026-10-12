@@ -264,7 +264,8 @@ public class ApiIndirectMerchantService {
                 || request.getFileContent().length == 0) {
             throw new IllegalArgumentException("file name and non-empty content are required");
         }
-        if (request.getFileName().length() > 128 || request.getFileContent().length > MAX_UPLOAD_BYTES) {
+        int filenameLength = request.getFileName().codePointCount(0, request.getFileName().length());
+        if (filenameLength > 128 || request.getFileContent().length > MAX_UPLOAD_BYTES) {
             throw new IllegalArgumentException("file exceeds upload limits");
         }
         String name = request.getFileName().toLowerCase(java.util.Locale.ROOT);

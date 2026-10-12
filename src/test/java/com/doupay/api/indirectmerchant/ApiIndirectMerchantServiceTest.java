@@ -175,6 +175,20 @@ public class ApiIndirectMerchantServiceTest {
     }
 
     @Test
+    public void uploadShouldCountFilenameUnicodeCharacters() {
+        DefaultDouyinpayClient client = mock(DefaultDouyinpayClient.class);
+        when(client.executeMultipart(any(DouyinpayMultipartRequest.class), eq(UploadResponse.class)))
+                .thenReturn(response(new UploadResponse()));
+        ApiIndirectMerchantService service = new ApiIndirectMerchantService.Builder().douyinpayClient(client).build();
+        StringBuilder name = new StringBuilder();
+        for (int i = 0; i < 124; i++) {
+            name.appendCodePoint(0x20000);
+        }
+        service.upload(new UploadRequest(name + ".png", "image/png", new byte[] {1}));
+        assertInvalidUpload(service, new UploadRequest(name + "图.png", "image/png", new byte[] {1}));
+    }
+
+    @Test
     public void parserShouldDelegateAndPreserveUnknownState() {
         NotificationParser parser = mock(NotificationParser.class);
         RequestParam requestParam = mock(RequestParam.class);
